@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stream Engine Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body { background: #0f0f0f; color: #00ff41; font-family: 'Courier New', monospace; padding: 20px; }
+        .player-card { max-width: 900px; margin: auto; border: 1px solid #00ff41; padding: 10px; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); }
+        video { width: 100%; border: 1px solid #333; }
+        .console { background: #000; padding: 15px; margin-top: 10px; border: 1px id #222; text-align: left; font-size: 12px; overflow-x: auto; }
+        .controls { margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        button { background: #000; color: #00ff41; border: 1px solid #00ff41; padding: 8px 15px; cursor: pointer; text-transform: uppercase; }
+        button:hover { background: #00ff41; color: #000; }
+        button.recording { background: #ff0000; color: #fff; border-color: #ff0000; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+        .blob-display { color: #fff; word-break: break-all; margin-top: 10px; display: block; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+<div class="player-card">
+    <video id="video" controls autoplay></video>
+    
+    <div class="controls">
+        <button id="recBtn" onclick="toggleRecording()">Start MP4 Record</button>
+        <button onclick="refreshSource()">Force Refresh Token</button>
+        <button onclick="video.currentTime = video.duration">Live</button>
+    </div>
+
+    <div class="console">
+        <div>STATUS: <span id="status">IDLE</span></div>
+        <div>CURRENT BLOB URL:</div>
+        <code id="blob-url-display" class="blob-display">No active recording...</code>
+    </div>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const recBtn = document.getElementById('recBtn');
+    const statusLabel = document.getElementById('status');
+    const blobDisplay = document.getElementById('blob-url-display');
+    
+    let hls;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let sourceUrl = "https://c202-node62-cdn.connectmedia.hu/110102/fca56d4d40af56e3c06912e90cd730b2/69cad9c9/index.m3u8?v=5";
+
+    function initPlayer(url) {
+        // Enforce the special token format
+        const streamUrl = url.includes("?v=5") ? url.replace("?v=5", "?v=5iip:") : url;
+        
+        if (Hls.isSupported()) {
+            if (hls) hls.destroy();
+            hls = new Hls({
+                enableWorker: true, // Use web worker to reduce UI lag
+                lowLatencyMode: true,
+                backBufferLength: 60 // Allows 1 min rewind buffer
+            });
+            hls.loadSource(streamUrl);
+            hls.attachMedia(video);
+            
+            hls.on(Hls.Events.ERROR, (event, data) => {
+                if (data.fatal) refreshSource();
+            });
+            statusLabel.innerText = "STREAMING: " + (streamUrl.includes("5iip:") ? "TOKEN_V2" : "NORMAL");
+        }
+    }
+
+    function toggleRecording() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+        } else {
+            startRecording();
+        }
+    }
+
+    function startRecording() {
+        recordedChunks = [];
+        const stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+        
+        // Try MP4 first (supported in modern Chrome/Edge), fallback to WebM only if needed
+        const types = ['video/mp4', 'video/webm;codecs=h264', 'video/webm'];
+        const supportedType = types.find(type => MediaRecorder.isTypeSupported(type));
+
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: supportedType,
+            videoBitsPerSecond: 5000000 // 5Mbps for high quality
+        });
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: supportedType });
+            const url = URL.createObjectURL(blob);
+            
+            // UI Update
+            blobDisplay.innerText = url;
+            recBtn.innerText = "Start MP4 Record";
+            recBtn.classList.remove('recording');
+            statusLabel.innerText = "RECORDING SAVED";
+
+            // Open in new tab or download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `capture_${Date.now()}.mp4`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // Auto-cleanup after 1 hour
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                if(blobDisplay.innerText === url) blobDisplay.innerText = "Expired (1hr limit)";
+            }, 3600000);
+        };
+
+        mediaRecorder.start(1000); // Capture in 1s slices to prevent memory spikes
+        recBtn.innerText = "STOP & SAVE";
+        recBtn.classList.add('recording');
+        statusLabel.innerText = "RECORDING LIVE...";
+    }
+
+    function refreshSource() {
+        statusLabel.innerText = "REFRESHING...";
+        // In your real app, you'd fetch the latest .m3u8 from the mediaklikk API here
+        initPlayer(sourceUrl); 
+    }
+
+    // Initial Start
+    initPlayer(sourceUrl);
+
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stream Engine Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body { background: #0f0f0f; color: #00ff41; font-family: 'Courier New', monospace; padding: 20px; }
+        .player-card { max-width: 900px; margin: auto; border: 1px solid #00ff41; padding: 10px; box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); }
+        video { width: 100%; border: 1px solid #333; }
+        .console { background: #000; padding: 15px; margin-top: 10px; border: 1px id #222; text-align: left; font-size: 12px; overflow-x: auto; }
+        .controls { margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        button { background: #000; color: #00ff41; border: 1px solid #00ff41; padding: 8px 15px; cursor: pointer; text-transform: uppercase; }
+        button:hover { background: #00ff41; color: #000; }
+        button.recording { background: #ff0000; color: #fff; border-color: #ff0000; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+        .blob-display { color: #fff; word-break: break-all; margin-top: 10px; display: block; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+<div class="player-card">
+    <video id="video" controls autoplay></video>
+    
+    <div class="controls">
+        <button id="recBtn" onclick="toggleRecording()">Start MP4 Record</button>
+        <button onclick="refreshSource()">Force Refresh Token</button>
+        <button onclick="video.currentTime = video.duration">Live</button>
+    </div>
+
+    <div class="console">
+        <div>STATUS: <span id="status">IDLE</span></div>
+        <div>CURRENT BLOB URL:</div>
+        <code id="blob-url-display" class="blob-display">No active recording...</code>
+    </div>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const recBtn = document.getElementById('recBtn');
+    const statusLabel = document.getElementById('status');
+    const blobDisplay = document.getElementById('blob-url-display');
+    
+    let hls;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let sourceUrl = "https://c202-node62-cdn.connectmedia.hu/110102/fca56d4d40af56e3c06912e90cd730b2/69cad9c9/index.m3u8?v=5";
+
+    function initPlayer(url) {
+        // Enforce the special token format
+        const streamUrl = url.includes("?v=5") ? url.replace("?v=5", "?v=5iip:") : url;
+        
+        if (Hls.isSupported()) {
+            if (hls) hls.destroy();
+            hls = new Hls({
+                enableWorker: true, // Use web worker to reduce UI lag
+                lowLatencyMode: true,
+                backBufferLength: 60 // Allows 1 min rewind buffer
+            });
+            hls.loadSource(streamUrl);
+            hls.attachMedia(video);
+            
+            hls.on(Hls.Events.ERROR, (event, data) => {
+                if (data.fatal) refreshSource();
+            });
+            statusLabel.innerText = "STREAMING: " + (streamUrl.includes("5iip:") ? "TOKEN_V2" : "NORMAL");
+        }
+    }
+
+    function toggleRecording() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+        } else {
+            startRecording();
+        }
+    }
+
+    function startRecording() {
+        recordedChunks = [];
+        const stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+        
+        // Try MP4 first (supported in modern Chrome/Edge), fallback to WebM only if needed
+        const types = ['video/mp4', 'video/webm;codecs=h264', 'video/webm'];
+        const supportedType = types.find(type => MediaRecorder.isTypeSupported(type));
+
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: supportedType,
+            videoBitsPerSecond: 5000000 // 5Mbps for high quality
+        });
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: supportedType });
+            const url = URL.createObjectURL(blob);
+            
+            // UI Update
+            blobDisplay.innerText = url;
+            recBtn.innerText = "Start MP4 Record";
+            recBtn.classList.remove('recording');
+            statusLabel.innerText = "RECORDING SAVED";
+
+            // Open in new tab or download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `capture_${Date.now()}.mp4`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // Auto-cleanup after 1 hour
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                if(blobDisplay.innerText === url) blobDisplay.innerText = "Expired (1hr limit)";
+            }, 3600000);
+        };
+
+        mediaRecorder.start(1000); // Capture in 1s slices to prevent memory spikes
+        recBtn.innerText = "STOP & SAVE";
+        recBtn.classList.add('recording');
+        statusLabel.innerText = "RECORDING LIVE...";
+    }
+
+    function refreshSource() {
+        statusLabel.innerText = "REFRESHING...";
+        // In your real app, you'd fetch the latest .m3u8 from the mediaklikk API here
+        initPlayer(sourceUrl); 
+    }
+
+    // Initial Start
+    initPlayer(sourceUrl);
+
+</script>
+</body>
+</html>
